@@ -61,6 +61,11 @@ const SUFFIX_LABELS: Record<string, string> = {
   "5": "5 (Power)",
 };
 
+/** Convert display key (from db.keys e.g. "C#") to chords object key (e.g. "Csharp") */
+function chordsKey(displayKey: string): string {
+  return displayKey.replace("#", "sharp");
+}
+
 /** Convert DB frets array (6th→1st) + baseFret to our format (1st→6th), with null for mute */
 function convertFrets(position: ChordPosition): (number | null)[] {
   const { frets, baseFret } = position;
@@ -109,7 +114,7 @@ export default function ChordSelector({ onSelect }: ChordSelectorProps) {
   const lookup = useCallback(
     (key: string, suf: string) => {
       if (!db) return;
-      const chordList = db.chords[key];
+      const chordList = db.chords[chordsKey(key)];
       if (!chordList) return;
       const entry = chordList.find((c) => c.suffix === suf);
       if (!entry || entry.positions.length === 0) return;
@@ -158,7 +163,7 @@ export default function ChordSelector({ onSelect }: ChordSelectorProps) {
   const suffixes = db.suffixes;
 
   // Check if current combination exists
-  const chordList = db.chords[rootKey];
+  const chordList = db.chords[chordsKey(rootKey)];
   const entryExists = chordList?.some((c) => c.suffix === suffix) ?? false;
 
   return (

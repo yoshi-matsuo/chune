@@ -178,16 +178,20 @@ function EarMode({ samplerRef }: { samplerRef: React.RefObject<import("tone").Sa
 }
 
 // ==================== Meter Mode ====================
+const SMOOTHING_SIZE = 8; // rolling average window
+
 function MeterMode() {
   const [micState, setMicState] = useState<"idle" | "starting" | "active">("idle");
   const [frequency, setFrequency] = useState<number | null>(null);
   const [noteInfo, setNoteInfo] = useState<{ note: string; octave: number; cents: number; noteWithOctave: string } | null>(null);
+  const [smoothedCents, setSmoothedCents] = useState(0);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const bufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const centsHistoryRef = useRef<number[]>([]);
 
   const startMic = useCallback(async () => {
     setMicState("starting");
@@ -205,16 +209,23 @@ function MeterMode() {
       analyserRef.current = analyser;
 
       bufferRef.current = new Float32Array(analyser.fftSize);
+      centsHistoryRef.current = [];
       setMicState("active");
 
-      // Start detection loop
       const detect = () => {
         if (!analyserRef.current || !bufferRef.current) return;
         analyserRef.current.getFloatTimeDomainData(bufferRef.current);
         const freq = detectPitch(bufferRef.current, audioCtx.sampleRate);
         setFrequency(freq);
         if (freq) {
-          setNoteInfo(freqToNote(freq));
+          const info = freqToNote(freq);
+          setNoteInfo(info);
+          // Push to rolling buffer and compute average
+          const history = centsHistoryRef.current;
+          history.push(info.cents);
+          if (history.length > SMOOTHING_SIZE) history.shift();
+          const avg = history.reduce((a, b) => a + b, 0) / history.length;
+          setSmoothedCents(avg);
         } else {
           setNoteInfo(null);
         }
@@ -235,9 +246,11 @@ function MeterMode() {
     analyserRef.current = null;
     rafRef.current = null;
     bufferRef.current = null;
+    centsHistoryRef.current = [];
     setMicState("idle");
     setFrequency(null);
     setNoteInfo(null);
+    setSmoothedCents(0);
   }, []);
 
   useEffect(() => {
@@ -248,57 +261,48 @@ function MeterMode() {
     };
   }, []);
 
-  // Cents for needle position: -50 to +50 → mapped to -90deg to +90deg
-  const cents = noteInfo?.cents ?? 0;
-  const needleAngle = Math.max(-50, Math.min(50, cents)) * 1.8; // ±50 cents → ±90deg
-  const inTune = noteInfo !== null && Math.abs(cents) <= 5;
-  const close = noteInfo !== null && Math.abs(cents) <= 15;
+  const displayCents = noteInfo ? Math.round(smoothedCents) : 0;
+  const needleAngle = Math.max(-50, Math.min(50, smoothedCents)) * 1.8;
+  const inTune = noteInfo !== null && Math.abs(displayCents) <= 5;
+  const close = noteInfo !== null && Math.abs(displayCents) <= 15;
+  const needleColor = noteInfo === null ? "#3f3f46" : inTune ? "#22c55e" : close ? "#eab308" : "#ef4444";
 
-  if (micState === "idle") {
+  // Fixed-height container for idle / starting states to prevent layout shift
+  if (micState !== "active") {
     return (
-      <div className="flex flex-col items-center gap-4 py-8">
-        <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-zinc-400">
-            <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-            <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-          </svg>
-        </div>
-        <p className="text-sm text-zinc-400 text-center">
-          Enable the microphone to detect your guitar&apos;s pitch.
-        </p>
-        <button
-          onClick={startMic}
-          className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors cursor-pointer shadow-md"
-        >
-          Enable Microphone
-        </button>
-      </div>
-    );
-  }
-
-  if (micState === "starting") {
-    return (
-      <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-sm text-amber-400 animate-pulse">Starting microphone...</p>
+      <div className="flex flex-col items-center justify-center" style={{ minHeight: 340 }}>
+        {micState === "idle" ? (
+          <>
+            <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-zinc-400">
+                <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+              </svg>
+            </div>
+            <p className="text-sm text-zinc-400 text-center mb-4">
+              Enable the microphone to detect your guitar&apos;s pitch.
+            </p>
+            <button
+              onClick={startMic}
+              className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors cursor-pointer shadow-md"
+            >
+              Enable Microphone
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-amber-400 animate-pulse">Starting microphone...</p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      {/* Meter */}
-      <div className="relative w-64 h-36 overflow-hidden">
-        {/* Arc background */}
-        <svg viewBox="0 0 200 110" className="w-full h-full">
+    <div className="flex flex-col items-center" style={{ minHeight: 340 }}>
+      {/* Meter - fixed size */}
+      <div className="w-64 h-36 shrink-0">
+        <svg viewBox="0 0 200 110" className="w-full h-full" style={{ willChange: "transform" }}>
           {/* Outer arc */}
-          <path
-            d="M 10 100 A 90 90 0 0 1 190 100"
-            fill="none"
-            stroke="#27272a"
-            strokeWidth="8"
-            strokeLinecap="round"
-          />
-          {/* Colored zones */}
+          <path d="M 10 100 A 90 90 0 0 1 190 100" fill="none" stroke="#27272a" strokeWidth="8" strokeLinecap="round" />
           {/* Red left */}
           <path d="M 10 100 A 90 90 0 0 1 40 30" fill="none" stroke="#ef4444" strokeWidth="6" strokeLinecap="round" opacity="0.4" />
           {/* Yellow left */}
@@ -315,71 +319,67 @@ function MeterMode() {
             const angle = (c * 1.8 - 90) * (Math.PI / 180);
             const x1 = 100 + 78 * Math.cos(angle);
             const y1 = 100 + 78 * Math.sin(angle);
-            const x2 = 100 + (c === 0 ? 68 : 72) * Math.cos(angle);
-            const y2 = 100 + (c === 0 ? 68 : 72) * Math.sin(angle);
+            const len = c === 0 ? 68 : 72;
+            const x2 = 100 + len * Math.cos(angle);
+            const y2 = 100 + len * Math.sin(angle);
             return (
-              <line
-                key={c}
-                x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={c === 0 ? "#22c55e" : "#52525b"}
-                strokeWidth={c === 0 ? 2.5 : 1.5}
-              />
+              <line key={c} x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={c === 0 ? "#22c55e" : "#52525b"} strokeWidth={c === 0 ? 2.5 : 1.5} />
             );
           })}
 
-          {/* Labels */}
           <text x="22" y="95" fill="#71717a" fontSize="10" textAnchor="middle">-50</text>
           <text x="100" y="10" fill="#22c55e" fontSize="10" textAnchor="middle" fontWeight="bold">0</text>
           <text x="178" y="95" fill="#71717a" fontSize="10" textAnchor="middle">+50</text>
 
-          {/* Needle */}
-          {noteInfo && (
-            <g
-              style={{
-                transform: `rotate(${needleAngle}deg)`,
-                transformOrigin: "100px 100px",
-                transition: "transform 0.15s ease-out",
-              }}
-            >
-              <line
-                x1="100" y1="100" x2="100" y2="18"
-                stroke={inTune ? "#22c55e" : close ? "#eab308" : "#ef4444"}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-            </g>
-          )}
+          {/* Needle - always rendered, GPU-accelerated transform */}
+          <g style={{
+            transform: `rotate(${needleAngle}deg)`,
+            transformOrigin: "100px 100px",
+            transition: "transform 0.2s cubic-bezier(0.33, 1, 0.68, 1)",
+            willChange: "transform",
+          }}>
+            <line x1="100" y1="100" x2="100" y2="18"
+              stroke={needleColor} strokeWidth="2.5" strokeLinecap="round"
+              style={{ transition: "stroke 0.3s" }} />
+          </g>
 
           {/* Center pivot */}
-          <circle cx="100" cy="100" r="5" fill={inTune ? "#22c55e" : "#3f3f46"} />
+          <circle cx="100" cy="100" r="5" fill={inTune ? "#22c55e" : "#3f3f46"} style={{ transition: "fill 0.3s" }} />
           {inTune && <circle cx="100" cy="100" r="8" fill="none" stroke="#22c55e" strokeWidth="1" opacity="0.5" />}
         </svg>
       </div>
 
-      {/* Note display */}
-      <div className="text-center">
-        <p className={`text-5xl font-black transition-colors ${inTune ? "text-emerald-400" : "text-white"}`}>
+      {/* Note display - fixed size container */}
+      <div className="w-full h-28 flex flex-col items-center justify-center shrink-0">
+        <p className={`text-5xl font-black transition-colors duration-300 tabular-nums ${inTune ? "text-emerald-400" : "text-white"}`}
+           style={{ minWidth: "5ch", textAlign: "center" }}>
           {noteInfo ? noteInfo.noteWithOctave : "---"}
         </p>
-        {frequency && (
-          <p className="text-sm text-zinc-500 mt-1 font-mono">
-            {frequency.toFixed(1)} Hz
-            <span className={`ml-2 ${inTune ? "text-emerald-400" : close ? "text-yellow-400" : "text-red-400"}`}>
-              {cents >= 0 ? "+" : ""}{cents} cents
-            </span>
-          </p>
-        )}
-        {inTune && (
-          <p className="mt-2 text-sm font-semibold text-emerald-400 animate-pulse">
-            In Tune!
-          </p>
-        )}
+        <p className="text-sm text-zinc-500 mt-1 h-5" style={{ fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, monospace" }}>
+          {frequency ? (
+            <>
+              {frequency.toFixed(1).padStart(7)} Hz
+              <span className={`ml-2 ${inTune ? "text-emerald-400" : close ? "text-yellow-400" : "text-red-400"}`}
+                    style={{ transition: "color 0.3s" }}>
+                {displayCents >= 0 ? "+" : ""}{String(displayCents).padStart(3)} ct
+              </span>
+            </>
+          ) : (
+            <span className="text-zinc-600">Listening...</span>
+          )}
+        </p>
+        <div className="h-6 flex items-center">
+          {inTune && (
+            <span className="text-sm font-semibold text-emerald-400 animate-pulse">In Tune!</span>
+          )}
+        </div>
       </div>
 
       {/* Stop button */}
       <button
         onClick={stopMic}
-        className="mt-2 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors cursor-pointer"
+        className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors cursor-pointer shrink-0"
       >
         Stop Microphone
       </button>

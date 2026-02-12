@@ -170,9 +170,9 @@ export default function Fretboard() {
 
   // ---------- Render ----------
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-5xl">
+    <div className="flex flex-col items-center gap-3 w-full max-w-5xl">
       {/* Chord display + Start Audio */}
-      <div className="w-full flex flex-col items-center gap-3">
+      <div className="w-full flex flex-col items-center gap-2">
         {audioState === "idle" && (
           <button
             onClick={initAudio}
@@ -202,15 +202,16 @@ export default function Fretboard() {
         <ChordSelector onSelect={handleDictSelect} />
 
         {/* Main chord name */}
-        <div className="flex items-center gap-4 flex-wrap justify-center">
-          <span className="text-5xl md:text-6xl font-black tracking-tight text-white drop-shadow-lg min-w-[120px] text-center">
-            {dictChordName ?? mainChord ?? (selected.some((f) => f !== null) ? "Unknown" : "Select notes...")}
-          </span>
-          {/* Play Strum button */}
+        <div className="text-4xl md:text-6xl font-black tracking-tight text-white drop-shadow-lg text-center">
+          {dictChordName ?? mainChord ?? (selected.some((f) => f !== null) ? "Unknown" : "Select notes...")}
+        </div>
+
+        {/* Action buttons – always side by side */}
+        <div className="flex items-center gap-3">
           <button
             onClick={() => playStrum(selected)}
             disabled={!audioReady || !selected.some((f) => f !== null)}
-            className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all cursor-pointer disabled:cursor-not-allowed shadow-md ${
+            className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all cursor-pointer disabled:cursor-not-allowed shadow-md whitespace-nowrap ${
               strumming
                 ? "bg-emerald-400 text-emerald-950 scale-105"
                 : "bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white"
@@ -218,11 +219,10 @@ export default function Fretboard() {
           >
             {strumming ? "Playing..." : "Play Chord"}
           </button>
-          {/* Save button */}
           <button
             onClick={handleSave}
             disabled={!selected.some((f) => f !== null)}
-            className="px-5 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-semibold text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shadow-md"
+            className="px-5 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-semibold text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shadow-md whitespace-nowrap"
           >
             Save Chord
           </button>
