@@ -55,6 +55,8 @@ export default function Fretboard() {
   const SAMPLE_BASE_URL =
     "https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/guitar-acoustic/";
 
+  const pendingStrumRef = useRef<(number | null)[] | null>(null);
+
   const initAudio = useCallback(async () => {
     if (audioState !== "idle") return;
     setAudioState("loading");
@@ -74,6 +76,23 @@ export default function Fretboard() {
       release: 1.0,
       onload: () => {
         setAudioState("ready");
+        // Play pending strum if queued before audio was ready
+        const pending = pendingStrumRef.current;
+        if (pending) {
+          pendingStrumRef.current = null;
+          const strumNotes: string[] = [];
+          for (let si = 5; si >= 0; si--) {
+            const f = pending[si];
+            if (f !== null) strumNotes.push(getNoteAt(si, f));
+          }
+          if (strumNotes.length > 0) {
+            const now = Tone.now();
+            const STRUM_DELAY = 0.05;
+            strumNotes.forEach((note, i) => {
+              samplerRef.current!.triggerAttackRelease(note, "2n", now + i * STRUM_DELAY);
+            });
+          }
+        }
       },
     }).toDestination();
     samplerRef.current.volume.value = -3;
@@ -151,7 +170,7 @@ export default function Fretboard() {
   const handleSave = useCallback(() => {
     const hasNotes = selected.some((f) => f !== null);
     if (!hasNotes) return;
-    const name = mainChord ?? "Unknown";
+    const name = dictChordName ?? mainChord ?? "Unknown";
     setSavedChords((prev) => [...prev, { id: nextId, name, frets: [...selected] }]);
     setNextId((id) => id + 1);
   }, [selected, mainChord, nextId]);
@@ -159,44 +178,58 @@ export default function Fretboard() {
   const handleLoad = useCallback(
     (chord: SavedChord) => {
       setSelected(chord.frets);
-      playChord(chord.frets);
+      playStrum(chord.frets);
     },
-    [playChord]
+    [playStrum]
   );
 
   const handleDelete = useCallback((id: number) => {
     setSavedChords((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
+  // --- Play strum with auto-init: queue if audio not ready ---
+  const handlePlayStrum = useCallback(
+    (frets: (number | null)[]) => {
+      if (audioState === "idle") {
+        pendingStrumRef.current = frets;
+        initAudio();
+      } else if (audioState === "ready") {
+        playStrum(frets);
+      }
+    },
+    [audioState, initAudio, playStrum]
+  );
+
+  // --- Auto-init audio on first user interaction ---
+  const handleFirstInteraction = useCallback(() => {
+    if (audioState === "idle") {
+      initAudio();
+    }
+  }, [audioState, initAudio]);
+
   // ---------- Render ----------
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-5xl">
-      {/* Chord display + Start Audio */}
+    <div
+      className="flex flex-col items-center gap-3 w-full max-w-5xl"
+      onClickCapture={handleFirstInteraction}
+    >
+      {/* Chord display */}
       <div className="w-full flex flex-col items-center gap-2">
-        {audioState === "idle" && (
-          <button
-            onClick={initAudio}
-            className="px-8 py-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-lg transition-colors shadow-lg cursor-pointer"
-          >
-            Start Audio
-          </button>
-        )}
-        {audioState === "loading" && (
-          <p className="text-sm text-amber-400 animate-pulse font-medium">
-            Loading sounds...
-          </p>
-        )}
-        {audioState === "ready" && (
-          <div className="flex items-center gap-3">
-            <p className="text-xs text-emerald-400/70">Audio Ready</p>
+        <div className="flex items-center gap-3">
+          {audioState === "loading" && (
+            <p className="text-sm text-amber-400 animate-pulse font-medium">
+              Loading sounds...
+            </p>
+          )}
+          {audioState === "ready" && (
             <button
               onClick={() => setTunerOpen(true)}
               className="px-4 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium transition-colors cursor-pointer"
             >
               Tuner
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Chord Dictionary */}
         <ChordSelector onSelect={handleDictSelect} />
@@ -209,8 +242,8 @@ export default function Fretboard() {
         {/* Action buttons – always side by side */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => playStrum(selected)}
-            disabled={!audioReady || !selected.some((f) => f !== null)}
+            onClick={() => handlePlayStrum(selected)}
+            disabled={audioState === "loading" || !selected.some((f) => f !== null)}
             className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all cursor-pointer disabled:cursor-not-allowed shadow-md whitespace-nowrap ${
               strumming
                 ? "bg-emerald-400 text-emerald-950 scale-105"

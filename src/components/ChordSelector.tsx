@@ -86,6 +86,7 @@ export default function ChordSelector({ onSelect }: ChordSelectorProps) {
   const [rootKey, setRootKey] = useState("C");
   const [suffix, setSuffix] = useState("major");
   const cacheRef = useRef<ChordsDB | null>(null);
+  const initialLookupDone = useRef(false);
 
   // Fetch & cache chord DB
   useEffect(() => {
@@ -109,6 +110,20 @@ export default function ChordSelector({ onSelect }: ChordSelectorProps) {
       })
       .finally(() => setDbLoading(false));
   }, []);
+
+  // Auto-select initial chord (C Major) when DB first loads
+  useEffect(() => {
+    if (db && !initialLookupDone.current) {
+      initialLookupDone.current = true;
+      const chordList = db.chords[chordsKey(rootKey)];
+      if (!chordList) return;
+      const entry = chordList.find((c) => c.suffix === suffix);
+      if (!entry || entry.positions.length === 0) return;
+      const frets = convertFrets(entry.positions[0]);
+      const displayName = `${rootKey} ${SUFFIX_LABELS[suffix] ?? suffix}`;
+      onSelect(frets, displayName);
+    }
+  }, [db]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Look up and fire onSelect whenever rootKey or suffix changes
   const lookup = useCallback(
