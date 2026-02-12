@@ -221,14 +221,12 @@ export default function Fretboard() {
               Loading sounds...
             </p>
           )}
-          {audioState === "ready" && (
-            <button
-              onClick={() => setTunerOpen(true)}
-              className="px-4 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium transition-colors cursor-pointer"
-            >
-              Tuner
-            </button>
-          )}
+          <button
+            onClick={() => setTunerOpen(true)}
+            className="px-4 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium transition-colors cursor-pointer"
+          >
+            Tuner
+          </button>
         </div>
 
         {/* Chord Dictionary */}
